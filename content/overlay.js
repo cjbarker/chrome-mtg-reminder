@@ -7,8 +7,13 @@
 
   const style = document.createElement('style');
   style.textContent = `
+    @keyframes mtg-flash-pulse {
+      0%   { opacity: 1; }
+      50%  { opacity: 0; }
+      100% { opacity: 1; }
+    }
     @keyframes mtg-flash-fade {
-      0% { opacity: 1; }
+      0%   { opacity: 1; }
       100% { opacity: 0; }
     }
   `;
@@ -25,7 +30,7 @@
     'background: rgba(66, 133, 244, 0.35)',
     'z-index: 2147483647',
     'pointer-events: none',
-    'animation: mtg-flash-fade 1s ease-out forwards',
+    'animation: mtg-flash-pulse 0.5s ease-in-out 2, mtg-flash-fade 0.5s ease-out 1s forwards',
   ].join(';');
 
   document.documentElement.appendChild(overlay);
@@ -33,5 +38,5 @@
   setTimeout(() => {
     overlay.remove();
     style.remove();
-  }, 1100);
+  }, 1600);
 })();
