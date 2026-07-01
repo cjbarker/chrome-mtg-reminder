@@ -11,12 +11,7 @@ const statusBar = document.getElementById('status-bar');
 function showAuth(message) {
   authView.style.display = '';
   settingsView.style.display = 'none';
-  if (message) {
-    authError.textContent = message;
-    authError.style.display = '';
-  } else {
-    authError.style.display = 'none';
-  }
+  authError.textContent = message || '';
 }
 
 function showSettings() {
@@ -29,7 +24,8 @@ signInBtn.addEventListener('click', () => {
   chrome.identity.getAuthToken({ interactive: true }, (token) => {
     signInBtn.disabled = false;
     if (chrome.runtime.lastError || !token) {
-      showAuth('Sign-in failed. Please try again.');
+      const detail = chrome.runtime.lastError?.message || 'No token returned';
+      showAuth(`Sign-in failed: ${detail}`);
       return;
     }
     chrome.storage.local.set({ authNeeded: false });

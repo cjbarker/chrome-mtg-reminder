@@ -58,6 +58,9 @@ body {
   color: #d93025;
   font-size: 12px;
   margin-top: 12px;
+}
+
+#auth-error:empty {
   display: none;
 }
 
