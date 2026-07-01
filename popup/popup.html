@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting Reminder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h1>Meeting Reminder</h1>
+  </div>
+
+  <div id="auth-view" style="display: none;">
+    <p>Sign in with your Google account to get meeting reminders.</p>
+    <button id="sign-in-btn">Sign in with Google</button>
+    <p id="auth-error"></p>
+  </div>
+
+  <div id="settings-view" style="display: none;">
+    <div class="setting-row">
+      <label for="enabled-toggle">Notifications</label>
+      <div class="toggle">
+        <input type="checkbox" id="enabled-toggle">
+        <span class="slider"></span>
+      </div>
+    </div>
+    <div class="setting-row">
+      <label for="lead-time">Remind me (minutes before)</label>
+      <input type="number" id="lead-time" min="1" max="60" value="5">
+    </div>
+  </div>
+
+  <div class="status" id="status-bar"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
