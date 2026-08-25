@@ -1,6 +1,8 @@
 // Meeting Reminder - Background Service Worker
 // All event listeners registered synchronously at top level (MV3 requirement)
 
+import { renderMeetingToast } from './content/toast.js';
+
 const ALARM_NAME = 'calendarPoll';
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
 const CALENDAR_CACHE_TTL = 3600000; // 1 hour
@@ -74,7 +76,7 @@ async function getUpcomingEvents(token, leadTimeMinutes) {
   const now = new Date();
   const timeMin = now.toISOString();
   const timeMax = new Date(now.getTime() + leadTimeMinutes * 60000).toISOString();
-  const fields = 'items(id,summary,description,start,end,status,attendees,hangoutLink)';
+  const fields = 'items(id,summary,description,start,end,status,attendees,hangoutLink,htmlLink)';
 
   const allEvents = [];
   for (const calId of calendarIds) {
@@ -100,7 +102,10 @@ async function getUpcomingEvents(token, leadTimeMinutes) {
 }
 
 async function dedup(events) {
-  const { notifiedIds = {} } = await chrome.storage.local.get('notifiedIds');
+  const { notifiedIds = {}, eventLinks = {} } = await chrome.storage.local.get([
+    'notifiedIds',
+    'eventLinks',
+  ]);
 
   // Prune entries older than 24 hours
   const cutoff = Date.now() - 86400000;
@@ -108,12 +113,16 @@ async function dedup(events) {
   for (const [id, ts] of Object.entries(notifiedIds)) {
     if (ts > cutoff) pruned[id] = ts;
   }
+  const prunedLinks = {};
+  for (const [id, link] of Object.entries(eventLinks)) {
+    if (link.ts > cutoff) prunedLinks[id] = link;
+  }
 
   const newEvents = events.filter((e) => !pruned[e.id]);
   for (const e of newEvents) {
     pruned[e.id] = Date.now();
   }
-  await chrome.storage.local.set({ notifiedIds: pruned });
+  await chrome.storage.local.set({ notifiedIds: pruned, eventLinks: prunedLinks });
   return newEvents;
 }
 
@@ -124,11 +133,31 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '...' : str;
 }
 
-function createNotification(event) {
+function getEventTiming(event) {
   const now = Date.now();
   const startMs = new Date(event.start.dateTime).getTime();
   const minsAway = Math.max(0, Math.round((startMs - now) / 60000));
   const title = minsAway > 0 ? `Meeting in ${minsAway} minute${minsAway !== 1 ? 's' : ''}` : 'Meeting starting now';
+  return { minsAway, title };
+}
+
+function getEventJoinUrl(event) {
+  return event.hangoutLink || event.htmlLink || 'https://calendar.google.com/calendar';
+}
+
+async function rememberEventLink(eventId, url) {
+  const { eventLinks = {} } = await chrome.storage.local.get('eventLinks');
+  eventLinks[eventId] = { url, ts: Date.now() };
+  await chrome.storage.local.set({ eventLinks });
+}
+
+async function getEventLink(eventId) {
+  const { eventLinks = {} } = await chrome.storage.local.get('eventLinks');
+  return eventLinks[eventId]?.url;
+}
+
+async function createNotification(event) {
+  const { minsAway, title } = getEventTiming(event);
 
   chrome.notifications.create(`mtg-${event.id}`, {
     type: 'basic',
@@ -138,24 +167,50 @@ function createNotification(event) {
     contextMessage: truncate(event.description, 100),
     priority: 2,
   });
+
+  await rememberEventLink(event.id, getEventJoinUrl(event));
 }
 
 // --- Screen Flash (U6) ---
 
+async function getScriptableActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs.length) return null;
+  const tab = tabs[0];
+  if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://')) {
+    return null;
+  }
+  return tab;
+}
+
 async function flashActiveTab() {
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return;
-    const tab = tabs[0];
-    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://')) {
-      return;
-    }
+    const tab = await getScriptableActiveTab();
+    if (!tab) return;
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ['content/overlay.js'],
     });
   } catch {
     // Silently fail on unscriptable pages — toast is the reliable fallback
+  }
+}
+
+// --- In-page Toast (U7) ---
+
+async function showMeetingToast(event) {
+  try {
+    const tab = await getScriptableActiveTab();
+    if (!tab) return;
+    const { minsAway, title } = getEventTiming(event);
+    const joinUrl = getEventJoinUrl(event);
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: renderMeetingToast,
+      args: [title, event.summary || '(No title)', joinUrl, minsAway],
+    });
+  } catch {
+    // Silently fail on unscriptable pages — desktop notification is the reliable fallback
   }
 }
 
@@ -181,7 +236,8 @@ async function pollCalendar() {
 
     if (newEvents.length > 0) {
       for (const event of newEvents) {
-        createNotification(event);
+        await createNotification(event);
+        await showMeetingToast(event);
       }
       // Flash once per poll cycle regardless of event count
       await flashActiveTab();
@@ -237,13 +293,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-chrome.notifications.onClicked.addListener((notifId) => {
+chrome.notifications.onClicked.addListener(async (notifId) => {
   if (notifId.startsWith('mtg-')) {
     const eventId = notifId.slice(4);
-    const eid = btoa(eventId).replace(/=/g, '');
-    chrome.tabs.create({
-      url: `https://calendar.google.com/calendar/event?eid=${eid}`,
-    });
+    const url = (await getEventLink(eventId)) || 'https://calendar.google.com/calendar';
+    chrome.tabs.create({ url });
     chrome.notifications.clear(notifId);
   }
 });

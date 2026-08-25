@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Meeting Reminder",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Google Calendar meeting notifications with screen flash and toast alerts",
 
   "permissions": [
@@ -18,7 +18,7 @@
   ],
 
   "oauth2": {
-    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "842413366776-gak5k9b37ktng4ddsg69mmsnbsq13tmo.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/calendar.readonly"
     ]
